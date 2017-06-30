@@ -17,6 +17,7 @@
   "author": "Dmytro Semenov <dimichsdg@yahoo.com>",
   "license": "MIT",
   "dependencies": {
+    "d3-flame-graph": "^1.0.0",
     "shelljs": "^0.7.8",
     "v8-profiler": "^5.7.0"
   }
