@@ -1,0 +1,23 @@
+{
+  "name": "flames",
+  "version": "1.0.0",
+  "description": "Profiling tool for nodejs app",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "flame",
+    "graphs",
+    "profiling",
+    "cpu",
+    "nodejs",
+    "node"
+  ],
+  "author": "Dmytro Semenov <dimichsdg@yahoo.com>",
+  "license": "MIT",
+  "dependencies": {
+    "shelljs": "^0.7.8",
+    "v8-profiler": "^5.7.0"
+  }
+}

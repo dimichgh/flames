@@ -1,0 +1,217 @@
+<html>
+
+<body>
+    <script type="text/javascript" src="js/d3.js">
+    </script>
+    <script type="text/javascript" src="js/d3-tip.js">
+    </script>
+    <script type="text/javascript" src="js/d3-flame-chart.js">
+    </script>
+    <div>CPU profile dump <span id="CPU-dump">will be available as <xsl:value-of select="@file" /> in <span id='timeLeft'><xsl:value-of select="@duration" /></span> sec.</span>
+    </div>
+    <script>
+        var base = '<xsl:value-of select="@base" />';
+        var counter = < xsl: value - of select = "@duration" / > +3;
+        var view = < xsl: value - of select = "@view" / > ;
+        var path = '<xsl:value-of select="@file" />'; <
+        ![CDATA[
+            var timeLeftEl = document.getElementById('timeLeft');
+            var content = ', click here to <a download=' + path +
+                ' href="/admin/v3console/logs?logfile=' + path + '">download</a><br/>';
+            if (view) {
+                counter = 0;
+            }
+            var intervalTimer = setInterval(renderResult, 1000);
+
+            function renderResult() {
+                counter--;
+                if (counter <= 0) {
+                    clearInterval(intervalTimer);
+                    intervalTimer = undefined;
+                    var el = document.getElementById('CPU-dump');
+                    el.innerHTML = content;
+                    showFlames();
+                }
+                timeLeftEl.innerHTML = counter;
+            }
+        ]] >
+    </script>
+
+    <div class="container-chart">
+        <div class="header clearfix">
+            <nav>
+                <div class="pull-right">
+                    <form class="form-inline" id="form">
+                        <a class="btn" href="javascript: resetZoom();">Reset zoom</a>
+                        <a class="btn" href="javascript: clear();">Clear</a>
+                        <div class="form-group">
+                            <input type="text" class="form-control" id="term" />
+                        </div>
+                        <a class="btn btn-primary" href="javascript: search();">Search</a>
+                    </form>
+                </div>
+            </nav>
+            <h5 class="text-muted">Flame Chart</h5>
+        </div>
+        <div id="chart">
+            <img id="progress" src="images/progress.gif" />
+        </div>
+        <hr />
+        <div id="details">
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        < ![CDATA[
+
+            var flameGraph;
+
+            function showFlames() {
+                d3.json("/admin/v3console/logs?logfile=]]><xsl:value-of select="
+                    @file " /><![CDATA[",
+                    function(error, data) {
+                        $('#progress').hide();
+                        if (error) return console.warn(error);
+
+                        var times = chromeProfileToCallgrind(data);
+                        adjustBaseTime(times);
+                        var ctx = {
+                            depth: 0
+                        };
+                        var d3Profile = convert(times.head, ctx);
+
+                        flameGraph = d3.flameGraph()
+                            .height(19 * ctx.depth)
+                            .width(960)
+                            .cellHeight(19)
+                            .transitionDuration(750)
+                            .transitionEase('cubic-in-out')
+                            .sort(true)
+                            //Example to sort in reverse order
+                            //.sort(function(a,b){ return d3.descending(a.name, b.name);})
+                            .title("")
+                            .onClick(onClick);
+
+
+                        // Example on how to use custom tooltips using d3-tip.
+                        var tip = d3.tip()
+                            .direction("s")
+                            .offset([8, 0])
+                            .attr('class', 'd3-flame-graph-tip')
+                            .html(function(d) {
+                                return d.name + ", time: " + d.value + 'ms, path: ' +
+                                    (d.path ? d.path.replace(base, '') : '');
+                            });
+
+                        flameGraph.tooltip(tip);
+
+
+                        d3.select("#chart")
+                            .datum(d3Profile)
+                            .call(flameGraph);
+                    });
+
+                document.getElementById("form").addEventListener("submit", function(event) {
+                    event.preventDefault();
+                    search();
+                });
+            }
+
+
+            function search() {
+                var term = document.getElementById("term").value;
+                flameGraph.search(term);
+            }
+
+            function clear() {
+                document.getElementById('term').value = '';
+                flameGraph.clear();
+            }
+
+            function resetZoom() {
+                flameGraph.resetZoom();
+            }
+
+            function onClick(d) {
+                console.info("Clicked on " + d.name);
+            }
+
+            function convert(nod, ctx, depth) {
+                depth = depth || 0;
+                // update max depth
+                if (ctx.depth < depth) {
+                    ctx.depth = depth;
+                }
+                return {
+                    name: (nod.functionName || '(anonymous function)'),
+                    path: nod.url + ':' + nod.lineNumber,
+                    value: Math.round(nod.totalTime),
+                    children: (nod.children || []).map(function map(child) {
+                        return convert(child, ctx, depth + 1);
+                    })
+                };
+            }
+
+            function adjustBaseTime(profile) {
+                profile.head.totalTime = profile.head.children.reduce(function reduce(memo, child) {
+                    if (child.functionName === '(idle)') {
+                        // skip idle time
+                        child.totalTime = 5;
+                    }
+                    memo += child.totalTime;
+                    return memo;
+                }, 0);
+            }
+
+            // Based on WebInspector.CPUProfileView in CPUProfileView.js in Blink source.
+            // https://github.com/yoavweiss/Blink/blob/master/Source/devtools/front_end/CPUProfileView.js
+            function calculateTimes(profile) {
+                function totalHitCount(node) {
+                    var result = node.hitCount;
+                    for (var i = 0; i < node.children.length; i++) {
+                        result += totalHitCount(node.children[i]);
+                    }
+                    return result;
+                }
+                profile.totalHitCount = totalHitCount(profile.head);
+                profile.totalTime = 1000 * (profile.endTime - profile.startTime);
+
+                var samplingInterval = profile.totalTime / profile.totalHitCount;
+
+                var calculateTimesForNode = function(node) {
+                    node.selfTime = node.hitCount * samplingInterval;
+                    node.selfHitCount = node.hitCount;
+                    var totalHitCount = node.hitCount;
+                    for (var i = 0; i < node.children.length; i++) {
+                        totalHitCount += calculateTimesForNode(node.children[i]);
+                    }
+                    node.totalTime = totalHitCount * samplingInterval;
+                    node.totalHitCount = totalHitCount;
+                    return totalHitCount;
+                };
+                calculateTimesForNode(profile.head);
+            }
+
+            function walkTree(node, cb) {
+                if (!node) {
+                    return;
+                }
+                cb(node);
+                if (!node.children) {
+                    return;
+                }
+                node.children.forEach(function(child) {
+                    walkTree(child, cb);
+                });
+            }
+
+            function chromeProfileToCallgrind(profile) {
+                var timedProfile = JSON.parse(JSON.stringify(profile));
+                calculateTimes(timedProfile);
+                return timedProfile;
+            }
+        ]] >
+    </script>
+</body>
+
+</html>
